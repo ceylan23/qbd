@@ -3,7 +3,7 @@ name: Wallet Monitor
 on:
   schedule:
     # 每 30 分钟执行一次 (由于 GitHub Actions 资源限制，实际可能会有几分钟延迟)
-    - cron: '*/30 * * * *'
+    - cron: '*/3 * * * *'
   workflow_dispatch: # 允许你手动点击运行
 
 jobs:
