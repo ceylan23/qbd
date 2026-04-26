@@ -18,7 +18,7 @@ EVM_NETWORKS = {
     "BSC": {"url": "https://api.bscscan.com/api", "key": BSCSCAN_API_KEY, "explorer": "bscscan.com"}
 }
 
-# 待监控的 EVM 钱包地址 (0x开头，ETH和BSC通用)
+# 待监控的 EVM 钱包地址
 EVM_WALLETS = [
     "0x2affb7f6c7f666043a5418dc4cb0b4f80bc767bd",
     "0x61e6b4c6a170b59fd6c8966e545d740ce34b409d",
@@ -32,17 +32,14 @@ EVM_WALLETS = [
 ]
 
 # 待监控的 Solana 钱包地址 (Base58格式)
-# ⚠️ 注意：你需要把你真正想监控的 Solana 聪明钱包填到这里
 SOL_WALLETS = [
-    "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg" # 这是一个示例活跃地址，请替换
+    "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg"
 ]
 
-# 检查过去多长时间内的交易？(与 GitHub Actions 定时一致，30分钟)
 CHECK_INTERVAL_SECONDS = 30 * 60 
 # ==========================================
 
 def get_token_info(token_address):
-    """通过 DexScreener 查询代币热度"""
     try:
         res = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}").json()
         if res.get('pairs'):
@@ -64,18 +61,21 @@ def get_token_info(token_address):
                 "heat": heat,
                 "url": pair.get('url', '')
             }
-    except:
-        pass
+    except Exception as e:
+        print(f"DexScreener API 请求失败: {e}")
     return None
 
 def send_wxpusher(html_content, summary):
-    requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
-        "appToken": WXPUSHER_TOKEN, "content": html_content, "summary": summary,
-        "contentType": 2, "topicIds": [TOPIC_ID]
-    })
+    payload = {
+        "appToken": WXPUSHER_TOKEN, 
+        "content": html_content, 
+        "summary": summary,
+        "contentType": 2, 
+        "topicIds": [TOPIC_ID]
+    }
+    requests.post("https://wxpusher.zjiecode.com/api/send/message", json=payload)
 
 def check_evm_networks(start_time):
-    """检查 ETH 和 BSC"""
     for net_name, config in EVM_NETWORKS.items():
         if not config['key']:
             print(f"⚠️ 未配置 {net_name} 的 API KEY，跳过。")
@@ -86,7 +86,7 @@ def check_evm_networks(start_time):
             url = f"{config['url']}?module=account&action=tokentx&address={wallet}&page=1&offset=10&sort=desc&apikey={config['key']}"
             try:
                 res = requests.get(url).json()
-                if res['status'] != '1' or not res['result']:
+                if res.get('status') != '1' or not res.get('result'):
                     continue
                     
                 for tx in res['result']:
@@ -113,13 +113,38 @@ def check_evm_networks(start_time):
                 print(f"{net_name} 钱包 {wallet} 查询出错: {e}")
 
 def check_solana(start_time):
-    """检查 Solana"""
     print(f"🌐 正在扫描 Solana 网络...")
-    # 使用公共免费节点
-    client = Client("https://api.mainnet-beta.solana.com")
+    try:
+        client = Client("https://api.mainnet-beta.solana.com")
+        for wallet in SOL_WALLETS:
+            try:
+                pubkey = Pubkey.from_string(wallet)
+                response = client.get_signatures_for_address(pubkey, limit=5)
+                if not response.value: continue
+                
+                for sig_info in response.value:
+                    tx_time = sig_info.block_time
+                    if not tx_time or tx_time < start_time: break
+                    
+                    print(f"🚨 Solana 异动: {wallet[:6]}... 发生新交易！")
+                    
+                    dt_str = datetime.fromtimestamp(tx_time).strftime('%Y-%m-%d %H:%M:%S')
+                    html = f"<h2>🚨 聪明钱包异动 (Solana 🟣)</h2>"
+                    html += f"<p><strong>🕒 时间：</strong>{dt_str}</p>"
+                    html += f"<p><strong>💼 钱包：</strong>{wallet}</p>"
+                    html += f"<h3 style='color:#9C27B0;'>➡️ 发生新链上交互！</h3>"
+                    html += f"<p>💡 <a href='https://solscan.io/tx/{sig_info.signature}'>👉 点击前往 Solscan 浏览器查看详情</a></p>"
+                    
+                    send_wxpusher(html, f"[Solana] {wallet[:4]}.. 发生新交易")
+                    time.sleep(1)
+            except Exception as e:
+                print(f"Solana 钱包 {wallet} 查询出错: {e}")
+    except Exception as e:
+        print(f"Solana 客户端初始化失败: {e}")
+
+if __name__ == "__main__":
+    current_time = int(time.time())
+    start_time = current_time - CHECK_INTERVAL_SECONDS
     
-    for wallet in SOL_WALLETS:
-        try:
-            pubkey = Pubkey.from_string(wallet)
-            # 获取最近5条交易签名
-         
+    check_evm_networks(start_time)
+    check_solana(start_time)
