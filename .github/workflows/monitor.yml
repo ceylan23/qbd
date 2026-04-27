@@ -2,9 +2,8 @@ name: Wallet Monitor
 
 on:
   schedule:
-    # 每 30 分钟执行一次 (由于 GitHub Actions 资源限制，实际可能会有几分钟延迟)
-    - cron: '*/3 * * * *'
-  workflow_dispatch: # 允许你手动点击运行
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
   check-wallets:
@@ -12,10 +11,10 @@ jobs:
     
     steps:
     - name: 检出代码
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: 设置 Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         
@@ -25,7 +24,8 @@ jobs:
         
     - name: 运行监控脚本
       env:
-        # 这里从 GitHub Secrets 中读取你的密钥
         WXPUSHER_TOKEN: ${{ secrets.WXPUSHER_TOKEN }}
         ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        # 👇 就是少了下面这一行，把它加上去！
+        BSCSCAN_API_KEY: ${{ secrets.BSCSCAN_API_KEY }}
       run: python monitor_wallets.py
